@@ -1,5 +1,7 @@
 #!/bin/bash -xe
 
+export AWS_REGION="eu-west-1"
+
 function deploy() {
   pushd infra
   terraform init && terraform apply -auto-approve
