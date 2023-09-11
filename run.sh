@@ -12,7 +12,14 @@ function destroy() {
   popd
 }
 
+function session() {
+  aws ssm start-session --target "$1" \
+    --parameters command="/bin/zsh" \
+    --document-name AWS-StartInteractiveCommand
+}
+
 case "$1" in
   "deploy")  deploy ;;
   "destroy") destroy ;;
+  "session") session "$2" ;;
 esac

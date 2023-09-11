@@ -80,12 +80,18 @@ resource "aws_iam_instance_profile" "profile" {
 
 locals {
   user-data = <<-EOM
-  #!/bin/bash
+  #!/bin/bash -xe
   yum update
   yum -y install jq
   yum -y install zsh
+  yum -y install git
   yum -y install util-linux-user
+  adduser ssm-user
+  echo "ssm-user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ssm-user
   chsh -s /bin/zsh ssm-user
+  runuser -l ssm-user -c 'git clone https://github.com/ohmyzsh/ohmyzsh.git /home/ssm-user/.oh-my-zsh'
+  runuser -l ssm-user -c 'cp /home/ssm-user/.oh-my-zsh/templates/zshrc.zsh-template /home/ssm-user/.zshrc'
+  runuser -l ssm-user -c 'sed -i "s/ZSH_THEME=.*/ZSH_THEME=\"dallas\"/g" /home/ssm-user/.zshrc'
   EOM
 }
 
