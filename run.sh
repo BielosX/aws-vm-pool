@@ -19,8 +19,11 @@ function tag_instances() {
 }
 
 function deploy() {
+  local instance_count="${1:-1}"
+  local instance_type="${2:-t3.micro}"
   pushd infra
-  terraform init && terraform apply -auto-approve
+  terraform init && terraform apply -auto-approve \
+    -var="number-of-instances=$instance_count" -var="instance-type=$instance_type"
   asg_name=$(terraform output -raw asg-name)
   desired_capacity=$(aws autoscaling describe-auto-scaling-groups \
     --auto-scaling-group-names "$asg_name" | jq -r '.AutoScalingGroups[0].DesiredCapacity')
@@ -86,8 +89,32 @@ function refresh_instances() {
   popd
 }
 
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    "--instances")
+      INSTANCES="$2"
+      shift
+      shift
+      ;;
+    "--instance-type")
+      TYPE="$2"
+      shift
+      shift
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Positional args become $1 $2 etc
+set -- "${POSITIONAL_ARGS[@]}"
+
 case "$1" in
-  "deploy")  deploy ;;
+  "deploy")  deploy "$INSTANCES" "$TYPE" ;;
   "destroy") destroy ;;
   "session") session "$2" ;;
   "refresh") refresh_instances ;;
