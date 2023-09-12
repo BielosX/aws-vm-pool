@@ -42,7 +42,7 @@ function destroy() {
 
 function session() {
   instance_name="$1"
-filters=$(cat << EOM
+filters=$(cat <<- EOM
 [
   {
     "Name": "instance-state-name",
@@ -62,8 +62,33 @@ EOM
     --document-name AWS-StartInteractiveCommand
 }
 
+function get_refresh_status() {
+   status=$(aws autoscaling describe-instance-refreshes \
+       --auto-scaling-group-name "$1" \
+       --instance-refresh-ids "$2" | jq -r '.InstanceRefreshes[0].Status')
+}
+
+function refresh_instances() {
+  pushd infra
+  asg_name=$(terraform output -raw asg-name)
+  refresh_id=$(aws autoscaling start-instance-refresh \
+    --auto-scaling-group-name "$asg_name" \
+    --strategy "Rolling" \
+    --preferences "MinHealthyPercentage=0,InstanceWarmup=30" | jq -r '.InstanceRefreshId')
+  get_refresh_status "$asg_name" "$refresh_id"
+  while [ "$status" = "Pending" ] || [ "$status" = "InProgress" ]; do
+    echo "Status: ${status}"
+    get_refresh_status "$asg_name" "$refresh_id"
+    sleep 10
+  done
+  get_in_service_instances "$asg_name"
+  tag_instances "$instances"
+  popd
+}
+
 case "$1" in
   "deploy")  deploy ;;
   "destroy") destroy ;;
   "session") session "$2" ;;
+  "refresh") refresh_instances ;;
 esac
