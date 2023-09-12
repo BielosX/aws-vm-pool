@@ -91,7 +91,8 @@ function refresh_instances() {
 
 POSITIONAL_ARGS=()
 
-while [[ $# -gt 0 ]]; do
+number_of_args="$#"
+while (( number_of_args > 0 )); do
   case "$1" in
     "--instances")
       INSTANCES="$2"
@@ -108,6 +109,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
   esac
+  number_of_args="$#"
 done
 
 # Positional args become $1 $2 etc
