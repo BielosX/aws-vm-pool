@@ -8,14 +8,62 @@ function get_in_service_instances() {
     | jq -r '.AutoScalingGroups[0].Instances | map(select(.LifecycleState=="InService"))')
 }
 
-function tag_instances() {
+function for_every_instance() {
   instance_ids=$(jq -r 'map(.InstanceId)' <<< "$1")
   length=$(jq -r 'length' <<< "$instance_ids")
   for i in $(seq 1 "$length"); do
     index=$(( i - 1 ))
     instance_id=$(jq --argjson id "$index" -r '.[$id]' <<< "$instance_ids")
-    aws ec2 create-tags --resources "$instance_id" --tags "Key=Name,Value=vm${i}"
+    $2 "$instance_id" "$index"
   done
+}
+
+function tag_instance() {
+  index="$2"
+  instance_number=$(( index + 1 ))
+  aws ec2 create-tags --resources "$1" --tags "Key=Name,Value=vm${instance_number}"
+}
+
+function tag_instances() {
+  for_every_instance "$1" tag_instance
+}
+
+function check_instance_status() {
+  instance_id="$1"
+  length=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$instance_id" \
+    | jq -r '.Tags | map(select(.Key == "ready" and .Value == "true")) | length')
+  if (( length > 0 )); then
+    instances_status+=(true)
+  else
+    instances_status+=(false)
+  fi
+}
+
+function count_true() {
+  array=("$@")
+  true_values=0
+  for i in "${array[@]}"; do
+    if [ "$1" == true ]; then
+      true_values=$(( true_values + 1 ))
+    fi
+  done
+}
+
+function verify_status() {
+  instances_status=()
+  for_every_instance "$1" check_instance_status
+  count_true "${instances_status[@]}"
+}
+
+function wait_for_all() {
+  length=$(jq -r 'length' <<< "$1")
+  verify_status "$1"
+  while (( true_values < length )); do
+    verify_status "$1"
+    echo "${true_values} of ${length} are ready"
+    sleep 10
+  done
+  echo "All instances are ready"
 }
 
 function deploy() {
@@ -34,6 +82,7 @@ function deploy() {
     sleep 10
   done
   tag_instances "$instances"
+  wait_for_all "$instances"
   popd infra
 }
 
@@ -86,6 +135,7 @@ function refresh_instances() {
   done
   get_in_service_instances "$asg_name"
   tag_instances "$instances"
+  wait_for_all "$instances"
   popd
 }
 
