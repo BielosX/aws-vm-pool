@@ -69,9 +69,23 @@ data "aws_iam_policy_document" "assume-role-policy" {
   }
 }
 
+data "aws_iam_policy_document" "tag-policy" {
+  statement {
+    effect = "Allow"
+    resources = ["*"]
+    actions = [
+      "ec2:CreateTags"
+    ]
+  }
+}
+
 resource "aws_iam_role" "role" {
   assume_role_policy = data.aws_iam_policy_document.assume-role-policy.json
   managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
+  inline_policy {
+    name = "tag-policy"
+    policy = data.aws_iam_policy_document.tag-policy.json
+  }
 }
 
 resource "aws_iam_instance_profile" "profile" {
@@ -81,17 +95,23 @@ resource "aws_iam_instance_profile" "profile" {
 locals {
   user-data = <<-EOM
   #!/bin/bash -xe
-  yum update
-  yum -y install jq
-  yum -y install zsh
-  yum -y install git
-  yum -y install util-linux-user
-  adduser ssm-user
-  echo "ssm-user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ssm-user
-  chsh -s /bin/zsh ssm-user
-  runuser -l ssm-user -c 'git clone https://github.com/ohmyzsh/ohmyzsh.git /home/ssm-user/.oh-my-zsh'
-  runuser -l ssm-user -c 'cp /home/ssm-user/.oh-my-zsh/templates/zshrc.zsh-template /home/ssm-user/.zshrc'
-  runuser -l ssm-user -c 'sed -i "s/ZSH_THEME=.*/ZSH_THEME=\"dallas\"/g" /home/ssm-user/.zshrc'
+  exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+    yum update
+    yum -y install jq
+    yum -y install zsh
+    yum -y install git
+    yum -y install util-linux-user
+    adduser ssm-user
+    echo "ssm-user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ssm-user
+    chsh -s /bin/zsh ssm-user
+    runuser -l ssm-user -c 'git clone https://github.com/ohmyzsh/ohmyzsh.git /home/ssm-user/.oh-my-zsh'
+    runuser -l ssm-user -c 'cp /home/ssm-user/.oh-my-zsh/templates/zshrc.zsh-template /home/ssm-user/.zshrc'
+    runuser -l ssm-user -c 'sed -i "s/ZSH_THEME=.*/ZSH_THEME=\"maran\"/g" /home/ssm-user/.zshrc'
+    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    URL="http://169.254.169.254/latest/dynamic/instance-identity/document"
+    INSTANCE_IDENTITY=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -v "$URL")
+    INSTANCE_ID=$(jq -r '.instanceId' <<< "$INSTANCE_IDENTITY")
+    aws ec2 create-tags --resources "$INSTANCE_ID" --tags "Key=ready,Value=true"
   EOM
 }
 
