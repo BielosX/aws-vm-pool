@@ -30,8 +30,10 @@ function tag_instances() {
 
 function check_instance_status() {
   instance_id="$1"
-  length=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$instance_id" \
-    | jq -r '.Tags | map(select(.Key == "ready" and .Value == "true")) | length')
+  tags=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$instance_id" \
+           | jq -r '.Tags | map(select(.Key == "ready" and .Value == "true"))')
+  echo "instance ${instance_id} status tag: ${tags}"
+  length=$(jq -r 'length' <<< "$tags")
   if (( length > 0 )); then
     instances_status+=(true)
   else

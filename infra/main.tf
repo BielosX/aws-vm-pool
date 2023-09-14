@@ -132,6 +132,7 @@ resource "aws_launch_template" "template" {
 resource "aws_autoscaling_group" "asg" {
   max_size = var.number-of-instances
   min_size = var.number-of-instances
+  default_instance_warmup = 30
   launch_template {
     id = aws_launch_template.template.id
     version = aws_launch_template.template.latest_version
