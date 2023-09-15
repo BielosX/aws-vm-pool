@@ -1,6 +1,7 @@
 #!/bin/bash -e
 
 export AWS_REGION="eu-west-1"
+export AWS_PAGER=""
 
 function get_in_service_instances() {
   instances=$(aws autoscaling describe-auto-scaling-groups \
@@ -18,14 +19,43 @@ function for_every_instance() {
   done
 }
 
-function tag_instance() {
-  index="$2"
-  instance_number=$(( index + 1 ))
-  aws ec2 create-tags --resources "$1" --tags "Key=Name,Value=vm${instance_number}"
+function get_private_instance_ip() {
+  instance_id="$1"
+  private_ip=$(aws ec2 describe-instances --instance-ids "$instance_id" \
+    | jq -r '.Reservations[0].Instances[0].PrivateIpAddress')
 }
 
-function tag_instances() {
-  for_every_instance "$1" tag_instance
+function label_instance() {
+  index="$2"
+  instance_number=$(( index + 1 ))
+  instance_name="vm${instance_number}"
+  aws ec2 create-tags --resources "$1" --tags "Key=Name,Value=${instance_name}"
+  get_private_instance_ip "$1"
+change_batch=$(cat <<- EOM
+{
+  "Changes": [
+    {
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "${instance_name}.local.",
+        "Type": "A",
+        "TTL": 10,
+        "ResourceRecords": [
+          {
+            "Value": "$private_ip"
+          }
+        ]
+      }
+    }
+  ]
+}
+EOM
+)
+  aws route53 change-resource-record-sets --hosted-zone-id "$hosted_zone_id" --change-batch "$change_batch"
+}
+
+function label_instances() {
+  for_every_instance "$1" label_instance
 }
 
 function check_instance_status() {
@@ -75,6 +105,7 @@ function deploy() {
   terraform init && terraform apply -auto-approve \
     -var="number-of-instances=$instance_count" -var="instance-type=$instance_type"
   asg_name=$(terraform output -raw asg-name)
+  hosted_zone_id=$(terraform output -raw hosted-zone-id)
   desired_capacity=$(aws autoscaling describe-auto-scaling-groups \
     --auto-scaling-group-names "$asg_name" | jq -r '.AutoScalingGroups[0].DesiredCapacity')
   get_in_service_instances "$asg_name"
@@ -83,7 +114,7 @@ function deploy() {
     echo "DesiredCapacity: ${desired_capacity} InService: ${count}"
     sleep 10
   done
-  tag_instances "$instances"
+  label_instances "$instances"
   wait_for_all "$instances"
   popd infra
 }
@@ -122,9 +153,44 @@ function get_refresh_status() {
        --instance-refresh-ids "$2" | jq -r '.InstanceRefreshes[0].Status')
 }
 
+function remove_dns_entries() {
+  records=$(aws route53 list-resource-record-sets --hosted-zone-id "$hosted_zone_id" \
+    | jq -r '.ResourceRecordSets | map(select(.Type == "A"))')
+  length=$(jq -r 'length' <<< "$records")
+  for i in $(seq 1 "$length"); do
+    index=$(( i - 1 ))
+    record=$(jq --argjson id "$index" -r '.[$id]' <<< "$records")
+    name=$(jq -r '.Name' <<< "$record")
+    value=$(jq -r '.ResourceRecords[0].Value' <<< "$record")
+    echo "Removing DNS entry ${name}: ${value}"
+change_batch=$(cat <<- EOM
+{
+ "Changes": [
+   {
+     "Action": "DELETE",
+     "ResourceRecordSet": {
+       "Name": "$name",
+       "Type": "A",
+       "TTL": 10,
+       "ResourceRecords": [
+         {
+           "Value": "$value"
+         }
+       ]
+     }
+   }
+ ]
+}
+EOM
+)
+  aws route53 change-resource-record-sets --hosted-zone-id "$hosted_zone_id" --change-batch "$change_batch"
+  done
+}
+
 function refresh_instances() {
   pushd infra
   asg_name=$(terraform output -raw asg-name)
+  hosted_zone_id=$(terraform output -raw hosted-zone-id)
   refresh_id=$(aws autoscaling start-instance-refresh \
     --auto-scaling-group-name "$asg_name" \
     --strategy "Rolling" \
@@ -135,8 +201,9 @@ function refresh_instances() {
     get_refresh_status "$asg_name" "$refresh_id"
     sleep 10
   done
+  remove_dns_entries
   get_in_service_instances "$asg_name"
-  tag_instances "$instances"
+  label_instances "$instances"
   wait_for_all "$instances"
   popd
 }

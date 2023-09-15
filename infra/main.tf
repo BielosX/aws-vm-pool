@@ -79,6 +79,14 @@ data "aws_iam_policy_document" "tag-policy" {
   }
 }
 
+resource "aws_route53_zone" "local" {
+  name = "local"
+  vpc {
+    vpc_id = aws_vpc.vpc.id
+  }
+  force_destroy = true
+}
+
 resource "aws_iam_role" "role" {
   assume_role_policy = data.aws_iam_policy_document.assume-role-policy.json
   managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
