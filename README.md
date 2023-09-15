@@ -3,6 +3,13 @@
 Create AWS EC2 auto-scaling-group with specified number of instances for GNU/Linux experiments.
 Instances can be accessed using `ssm-agent`.
 
+## Requirements
+
+- [Terraform](https://developer.hashicorp.com/terraform/downloads)
+- [jq](https://jqlang.github.io/jq/manual/)
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-welcome.html)
+- [AWS CLI Session Manager Plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
+
 ## Usage
 
 Deploy AWS infrastructure:
