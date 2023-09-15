@@ -33,3 +33,11 @@ Auto Scaling Group can be refreshed (Replace all instances) with:
 ```shell
 ./run refresh
 ```
+
+Every instance is registered in private `Route53` hosted zone, instance is available as `vm${index}.local`
+for example:
+```shell
+ping vm2.local
+```
+
+Will send ICMP packets to instance named `vm2`

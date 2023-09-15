@@ -63,37 +63,29 @@ function check_instance_status() {
   tags=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$instance_id" \
            | jq -r '.Tags | map(select(.Key == "ready" and .Value == "true"))')
   echo "instance ${instance_id} status tag: ${tags}"
+  local length
   length=$(jq -r 'length' <<< "$tags")
   if (( length > 0 )); then
-    instances_status+=(true)
-  else
-    instances_status+=(false)
+    instances_ready=$(( instances_ready + 1 ))
+    echo "instance ${instance_id} ready"
   fi
 }
 
-function count_true() {
-  array=("$@")
-  true_values=0
-  for i in "${array[@]}"; do
-    if [ "$1" == true ]; then
-      true_values=$(( true_values + 1 ))
-    fi
-  done
-}
-
 function verify_status() {
-  instances_status=()
+  instances_ready=0
   for_every_instance "$1" check_instance_status
-  count_true "${instances_status[@]}"
 }
 
 function wait_for_all() {
+  local length
   length=$(jq -r 'length' <<< "$1")
+  echo "Waiting for ${length} instances"
   verify_status "$1"
-  while (( true_values < length )); do
-    verify_status "$1"
-    echo "${true_values} of ${length} are ready"
+  echo "${instances_ready} of ${length} are ready"
+  while (( instances_ready < length )); do
+    echo "${instances_ready} of ${length} are ready"
     sleep 10
+    verify_status "$1"
   done
   echo "All instances are ready"
 }
